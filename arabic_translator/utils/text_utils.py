@@ -174,7 +174,7 @@ class TextUtils:
         Returns:
             int: عدد الأحرف العربية
         """
-        return len(TextUtils.ARABIC_PATTERN.findall(text))
+        return sum(len(match) for match in TextUtils.ARABIC_PATTERN.findall(text))
 
     @staticmethod
     def count_english_chars(text: str) -> int:
@@ -188,7 +188,7 @@ class TextUtils:
         Returns:
             int: عدد الأحرف الإنجليزية
         """
-        return len(TextUtils.ENGLISH_PATTERN.findall(text))
+        return sum(len(match) for match in TextUtils.ENGLISH_PATTERN.findall(text))
 
     @staticmethod
     def remove_extra_whitespace(text: str) -> str:

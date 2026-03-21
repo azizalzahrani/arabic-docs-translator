@@ -98,7 +98,9 @@ class DocumentTranslator:
             translated = self._translate_plain_text(content)
 
         # Ensure output directory exists
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
 
         # Write output file
         with open(output_path, 'w', encoding='utf-8') as f:

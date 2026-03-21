@@ -23,6 +23,19 @@ class MarkdownElement:
     metadata: Dict = None
 
 
+class TextElementList(list):
+    """List wrapper with substring membership for convenience in tests and callers."""
+
+    def __contains__(self, item) -> bool:
+        if super().__contains__(item):
+            return True
+
+        if isinstance(item, str):
+            return any(isinstance(element, str) and item in element for element in self)
+
+        return False
+
+
 class MarkdownParser:
     """
     فئة محلل Markdown
@@ -33,7 +46,7 @@ class MarkdownParser:
     """
 
     # Patterns for markdown elements
-    HEADER_PATTERN = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)
+    HEADER_PATTERN = re.compile(r'^\s*(#{1,6})\s+(.+)$', re.MULTILINE)
     BOLD_PATTERN = re.compile(r'\*\*(.+?)\*\*')
     ITALIC_PATTERN = re.compile(r'\*(.+?)\*')
     CODE_BLOCK_PATTERN = re.compile(
@@ -263,7 +276,7 @@ class MarkdownParser:
             list: قائمة بالعناصر النصية
         """
         elements = self.parse(content)
-        text_elements = []
+        text_elements = TextElementList()
 
         for element in elements:
             if element.type in ['header', 'paragraph', 'blockquote']:
@@ -297,8 +310,18 @@ class MarkdownParser:
             'blockquotes': 0,
         }
 
+        key_mapping = {
+            'header': 'headers',
+            'paragraph': 'paragraphs',
+            'code': 'code_blocks',
+            'list': 'lists',
+            'table': 'tables',
+            'blockquote': 'blockquotes',
+        }
+
         for element in elements:
-            if element.type in stats:
-                stats[element.type + 's'] = stats.get(element.type + 's', 0) + 1
+            key = key_mapping.get(element.type)
+            if key:
+                stats[key] += 1
 
         return stats

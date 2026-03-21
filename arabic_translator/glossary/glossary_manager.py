@@ -47,7 +47,7 @@ class GlossaryManager:
             )
             if os.path.exists(tech_glossary_path):
                 with open(tech_glossary_path, "r", encoding="utf-8") as f:
-                    self.glossaries["tech"] = json.load(f)
+                    self.glossaries["tech"] = self._normalize_glossary(json.load(f))
 
             # Load framework glossary
             framework_glossary_path = os.path.join(
@@ -57,9 +57,18 @@ class GlossaryManager:
                 with open(framework_glossary_path, "r", encoding="utf-8") as f:
                     framework_data = json.load(f)
                     # Flatten framework glossary
-                    self.glossaries["framework"] = self._flatten_dict(framework_data)
+                    self.glossaries["framework"] = self._normalize_glossary(
+                        self._flatten_dict(framework_data)
+                    )
         except Exception as e:
             print(f"خطأ في تحميل القواموس المدمجة: {e}")
+
+    def _normalize_glossary(self, glossary: Dict[str, str]) -> Dict[str, str]:
+        """تطبيع مفاتيح القاموس لتكون غير حساسة لحالة الأحرف"""
+        return {
+            str(term).lower().strip(): translation
+            for term, translation in glossary.items()
+        }
 
     def _flatten_dict(self, d: Dict, parent_key: str = "") -> Dict[str, str]:
         """
@@ -97,7 +106,7 @@ class GlossaryManager:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 glossary = json.load(f)
-                self.glossaries[name] = glossary
+                self.glossaries[name] = self._normalize_glossary(glossary)
                 return True
         except Exception as e:
             print(f"خطأ في تحميل القاموس المخصص: {e}")

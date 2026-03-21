@@ -252,17 +252,21 @@ class CodeBlockHandler:
         Returns:
             str: اسم اللغة
         """
+        # Check for JSX before plain JavaScript so mixed snippets classify correctly.
+        jsx_pattern = re.search(
+            r'<[A-Za-z][\w:-]*\b[^>]*>|useState|useEffect|=>\s*<',
+            code
+        )
+        if jsx_pattern:
+            return 'jsx'
+
         # Check for Python
         if re.search(r'\bdef\s+\w+|import\s+\w+|class\s+\w+', code):
             return 'python'
 
         # Check for JavaScript/TypeScript
-        if re.search(r'\bfunction\s+\w+|const\s+\w+|let\s+\w+', code):
+        if re.search(r'\bfunction\s+\w+|const\s+\w+|let\s+\w+|var\s+\w+', code):
             return 'javascript'
-
-        # Check for JSX
-        if re.search(r'<[A-Z]\w+|useState|useEffect', code):
-            return 'jsx'
 
         # Check for Java
         if re.search(r'\bpublic\s+class\s+\w+|import\s+java', code):
