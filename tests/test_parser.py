@@ -74,7 +74,8 @@ should not appear
         """
         text_elements = parser.extract_text_elements(content)
         assert "Header" in text_elements
-        assert "paragraph" in text_elements
+        assert any("paragraph" in element for element in text_elements)
+        assert all("should not appear" not in element for element in text_elements)
         assert len(text_elements) > 0
 
     def test_get_element_statistics(self, parser):

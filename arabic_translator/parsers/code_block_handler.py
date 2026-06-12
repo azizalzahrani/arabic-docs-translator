@@ -7,7 +7,7 @@ Extracts and protects code blocks from translation.
 """
 
 import re
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, Tuple
 from dataclasses import dataclass
 
 

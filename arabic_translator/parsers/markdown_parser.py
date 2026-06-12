@@ -8,7 +8,7 @@ Parses markdown files while preserving formatting.
 
 import re
 from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -20,20 +20,7 @@ class MarkdownElement:
     type: str  # 'header', 'paragraph', 'code', 'list', 'table', 'link', 'image'
     content: str
     level: Optional[int] = None  # For headers
-    metadata: Dict = None
-
-
-class TextElementList(list):
-    """List wrapper with substring membership for convenience in tests and callers."""
-
-    def __contains__(self, item) -> bool:
-        if super().__contains__(item):
-            return True
-
-        if isinstance(item, str):
-            return any(isinstance(element, str) and item in element for element in self)
-
-        return False
+    metadata: Dict = field(default_factory=dict)
 
 
 class MarkdownParser:
@@ -99,10 +86,12 @@ class MarkdownParser:
 
             # Check for code blocks
             if line.strip().startswith('```'):
+                language = line.strip()[3:].strip()
                 code_block, end_idx = self._extract_code_block(lines, i)
                 elements.append(MarkdownElement(
                     type='code',
-                    content=code_block
+                    content=code_block,
+                    metadata={'language': language}
                 ))
                 i = end_idx + 1
                 continue
@@ -190,7 +179,6 @@ class MarkdownParser:
         """استخراج قائمة"""
         content = []
         i = start_idx
-        base_indent = len(lines[i]) - len(lines[i].lstrip())
 
         while i < len(lines):
             line = lines[i]
@@ -246,7 +234,8 @@ class MarkdownParser:
                 prefix = '#' * element.level
                 result.append(f'{prefix} {element.content}')
             elif element.type == 'code':
-                result.append(f'```\n{element.content}\n```')
+                language = (element.metadata or {}).get('language', '')
+                result.append(f'```{language}\n{element.content}\n```')
             elif element.type == 'paragraph':
                 result.append(element.content)
             elif element.type == 'list':
@@ -276,14 +265,14 @@ class MarkdownParser:
             list: قائمة بالعناصر النصية
         """
         elements = self.parse(content)
-        text_elements = TextElementList()
+        text_elements: List[str] = []
 
         for element in elements:
             if element.type in ['header', 'paragraph', 'blockquote']:
                 text_elements.append(element.content)
             elif element.type == 'list':
-                # Extract individual list items
-                items = re.findall(r'[-*+]\s+(.+)', element.content)
+                # Extract individual list items (unordered and ordered)
+                items = re.findall(r'^[ \t]*(?:[-*+]|\d+[.)])\s+(.+)$', element.content, re.MULTILINE)
                 text_elements.extend(items)
 
         return text_elements

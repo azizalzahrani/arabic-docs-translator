@@ -7,7 +7,7 @@ Parses MDX files while preserving React components.
 """
 
 import re
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 from .markdown_parser import MarkdownParser, MarkdownElement
 
 
@@ -161,7 +161,7 @@ class MDXParser:
             'code_blocks': len([e for e in elements if e.type == 'code']),
         }
 
-    def validate_mdx(self, content: str) -> Dict[str, any]:
+    def validate_mdx(self, content: str) -> Dict[str, Any]:
         """
         التحقق من صحة MDX
         Validate MDX content.
