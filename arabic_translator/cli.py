@@ -64,8 +64,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model",
-        default="gpt-4",
-        help="Translation model name. Default: gpt-4",
+        default="auto",
+        help="Translation model name. Default: auto (provider's default model).",
+    )
+    parser.add_argument(
+        "--provider",
+        default="auto",
+        choices=["auto", "openai", "anthropic", "none"],
+        help=(
+            "LLM provider. 'auto' uses LLM_PROVIDER or detects API keys; "
+            "'none' runs offline (dry-run, no translation)."
+        ),
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Parallel workers in batch mode. Default: 4",
     )
     parser.add_argument(
         "--version",
@@ -91,7 +106,14 @@ def _run_file_translation(args: argparse.Namespace, input_path: Path) -> int:
         glossary_path=args.glossary_path,
         quality_threshold=args.quality_threshold,
         model=args.model,
+        provider=args.provider,
     )
+    if translator.is_dry_run:
+        print(
+            "warning: no API key configured - running in dry-run mode "
+            "(structure is processed, text is NOT translated)",
+            file=sys.stderr,
+        )
 
     if args.review:
         result = translator.translate_with_review(str(input_path), str(output_path))
@@ -109,7 +131,16 @@ def _run_batch_translation(args: argparse.Namespace, input_path: Path) -> int:
     translator = BatchTranslator(
         glossary_path=args.glossary_path,
         quality_threshold=args.quality_threshold,
+        model=args.model,
+        provider=args.provider,
+        num_workers=args.workers,
     )
+    if translator.translator.is_dry_run:
+        print(
+            "warning: no API key configured - running in dry-run mode "
+            "(structure is processed, text is NOT translated)",
+            file=sys.stderr,
+        )
     results = translator.translate_folder(
         str(input_path),
         str(output_path),

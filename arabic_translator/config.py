@@ -7,7 +7,6 @@ Manages all configuration and environment variables.
 """
 
 import os
-from typing import Optional
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,10 +27,11 @@ class Config(BaseModel):
     anthropic_api_key: str = Field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     llm_provider: str = Field(default_factory=lambda: os.getenv("LLM_PROVIDER", "openai"))
 
-    # Model Configuration
-    translation_model: str = Field(default_factory=lambda: os.getenv("TRANSLATION_MODEL", "gpt-4"))
-    review_model: str = Field(default_factory=lambda: os.getenv("REVIEW_MODEL", "gpt-4"))
-    adapter_model: str = Field(default_factory=lambda: os.getenv("ADAPTER_MODEL", "gpt-4"))
+    # Model Configuration ("auto" lets the provider layer pick its default model)
+    translation_model: str = Field(default_factory=lambda: os.getenv("TRANSLATION_MODEL", "auto"))
+    review_model: str = Field(default_factory=lambda: os.getenv("REVIEW_MODEL", "auto"))
+    adapter_model: str = Field(default_factory=lambda: os.getenv("ADAPTER_MODEL", "auto"))
+    llm_temperature: float = Field(default_factory=lambda: float(os.getenv("LLM_TEMPERATURE", "0.3")))
 
     # Translation Settings
     quality_threshold: float = Field(default_factory=lambda: float(os.getenv("QUALITY_THRESHOLD", "0.8")))

@@ -6,8 +6,29 @@ Translator Agent.
 Specialized agent for translating English to Arabic.
 """
 
-from typing import Optional, Dict, Tuple
+import logging
+import re
+from typing import Any, Dict, List, Optional
+
 from ..glossary import GlossaryManager
+from ..providers import BaseProvider, DryRunProvider, create_provider
+
+logger = logging.getLogger(__name__)
+
+SYSTEM_PROMPT = """أنت مترجم تقني محترف متخصص في توثيقات البرمجة.
+You are a professional technical translator specialized in developer documentation.
+
+ترجم من الإنجليزية إلى العربية الفصحى الحديثة بأسلوب طبيعي يناسب المطورين العرب.
+
+قواعد صارمة:
+1. أعد الترجمة فقط دون أي مقدمات أو شروحات أو علامات اقتباس إضافية.
+2. لا تترجم أسماء المكتبات والأدوات والدوال (React, useState, npm, ...).
+3. اترك أي نص بين علامتي backtick `...` كما هو تماماً دون ترجمة.
+4. اترك العناصر النائبة مثل __CODE_BLOCK_1__ و __MDX_PLACEHOLDER_2__ كما هي حرفياً.
+5. في روابط Markdown ‏[نص](رابط) ترجم النص فقط وأبقِ الرابط كما هو.
+6. حافظ على رموز Markdown (العناوين #، القوائم -، الجداول |، الاقتباسات >).
+7. استخدم المصطلحات المعتمدة في القاموس المرفق إن وجدت.
+8. حافظ على فواصل الأسطر كما في النص الأصلي."""
 
 
 class TranslatorAgent:
@@ -23,7 +44,10 @@ class TranslatorAgent:
         self,
         glossary_manager: Optional[GlossaryManager] = None,
         api_key: Optional[str] = None,
-        model: str = "gpt-4"
+        model: Optional[str] = None,
+        provider: str = "auto",
+        temperature: float = 0.3,
+        llm: Optional[BaseProvider] = None,
     ):
         """
         تهيئة وكيل الترجمة
@@ -31,13 +55,23 @@ class TranslatorAgent:
 
         Args:
             glossary_manager: مدير القاموس
-            api_key: مفتاح API
-            model: نموذج اللغة المستخدم
+            api_key: مفتاح API (اختياري، يتجاوز متغيرات البيئة)
+            model: نموذج اللغة المستخدم ("auto" لاختيار الافتراضي)
+            provider: openai | anthropic | none | auto
+            temperature: درجة العشوائية
+            llm: موفر جاهز (للاختبارات أو التخصيص المتقدم)
         """
         self.glossary_manager = glossary_manager or GlossaryManager()
-        self.api_key = api_key
-        self.model = model
+        self.llm = llm or create_provider(
+            provider=provider, model=model, temperature=temperature, api_key=api_key
+        )
+        self.model = self.llm.model
         self.translation_history: Dict[str, str] = {}
+
+    @property
+    def is_dry_run(self) -> bool:
+        """هل الوكيل في الوضع التجريبي؟ | Whether the agent runs offline."""
+        return isinstance(self.llm, DryRunProvider)
 
     def translate_text(self, text: str) -> str:
         """
@@ -53,32 +87,28 @@ class TranslatorAgent:
         if not text or not text.strip():
             return ""
 
-        # Check history first
+        # Translation memory: identical source segments translate identically.
         if text in self.translation_history:
             return self.translation_history[text]
 
-        # Create translation prompt with glossary context
+        # Offline mode: return the source unchanged - never wrap it in prompts.
+        if self.is_dry_run:
+            self.translation_history[text] = text
+            return text
+
         glossary_context = self._build_glossary_context(text)
         prompt = self._create_translation_prompt(text, glossary_context)
 
-        # Simulate translation (in production, call actual LLM API)
-        translation = self._call_llm_api(prompt)
+        translation = self.llm.complete_with_retry(SYSTEM_PROMPT, prompt)
+        translation = self._clean_response(translation, text)
 
-        # Store in history
         self.translation_history[text] = translation
-
         return translation
 
     def translate_paragraph(self, paragraph: str) -> str:
         """
         ترجمة فقرة كاملة
         Translate a complete paragraph.
-
-        Args:
-            paragraph: الفقرة الإنجليزية
-
-        Returns:
-            str: الفقرة المترجمة
         """
         return self.translate_text(paragraph)
 
@@ -96,62 +126,79 @@ class TranslatorAgent:
             text: النص المراد ترجمته
             context: السياق الإضافي
             domain: المجال (react, fastapi, python, etc.)
-
-        Returns:
-            str: النص المترجم مع مراعاة السياق
         """
+        if not text or not text.strip():
+            return ""
+
+        if self.is_dry_run:
+            return text
+
         glossary_context = self._build_glossary_context(text, domain)
         prompt = self._create_contextual_prompt(text, context, glossary_context, domain)
+        translation = self.llm.complete_with_retry(SYSTEM_PROMPT, prompt)
+        return self._clean_response(translation, text)
 
-        return self._call_llm_api(prompt)
+    def _clean_response(self, translation: str, source: str) -> str:
+        """
+        تنظيف رد النموذج
+        Clean up the model reply (stray quotes/labels some models add).
+        """
+        cleaned = translation.strip()
+
+        # Strip a single pair of wrapping quotes if the source had none.
+        if len(cleaned) >= 2 and cleaned[0] in '"«' and cleaned[-1] in '"»':
+            if not (source.startswith('"') and source.endswith('"')):
+                cleaned = cleaned[1:-1].strip()
+
+        # Remove a leading "الترجمة:" label if a model echoes it back.
+        cleaned = re.sub(r'^\s*(الترجمة|Translation)\s*[::]\s*', '', cleaned)
+
+        return cleaned or source
 
     def _build_glossary_context(self, text: str, domain: str = "general") -> str:
         """
         بناء سياق القاموس من النص
         Build glossary context from text.
-
-        Args:
-            text: النص المراد تحليله
-            domain: المجال
-
-        Returns:
-            str: سياق القاموس
         """
-        words = text.lower().split()
         relevant_terms = []
+        seen = set()
 
+        # URLs and inline code are not translatable - keep their words out of context
+        scannable = re.sub(r'`[^`\n]+`|https?://\S+|\]\([^)\s]+\)', ' ', text)
+        words = re.findall(r"[A-Za-z][A-Za-z0-9_'-]*", scannable)
+
+        # Single words
         for word in words:
-            # Remove punctuation
-            clean_word = word.strip('.,;:!?"\'')
-            if len(clean_word) > 3:
-                translation = self.glossary_manager.get_translation(clean_word)
-                if translation:
-                    relevant_terms.append(f"{clean_word} → {translation}")
+            clean_word = word.lower()
+            if clean_word in seen or len(clean_word) <= 2:
+                continue
+            translation = self.glossary_manager.get_translation(clean_word)
+            if translation:
+                seen.add(clean_word)
+                relevant_terms.append(f"{clean_word} → {translation}")
 
-        if relevant_terms:
-            return "\n".join(relevant_terms[:10])
-        return ""
+        # Two-word terms (e.g. "virtual dom", "arrow function")
+        lowered = [w.lower() for w in words]
+        for first, second in zip(lowered, lowered[1:]):
+            bigram = f"{first} {second}"
+            if bigram in seen:
+                continue
+            translation = self.glossary_manager.get_translation(bigram)
+            if translation:
+                seen.add(bigram)
+                relevant_terms.append(f"{bigram} → {translation}")
+
+        return "\n".join(relevant_terms[:15])
 
     def _create_translation_prompt(self, text: str, glossary_context: str) -> str:
         """إنشاء prompt للترجمة"""
-        return f"""أنت مترجم احترافي متخصص في التوثيقات التقنية.
+        glossary_section = (
+            f"\n\nالمصطلحات المعتمدة:\n{glossary_context}" if glossary_context else ""
+        )
+        return f"""ترجم النص التالي إلى العربية:{glossary_section}
 
-ترجم النص التالي من الإنجليزية إلى العربية (اللهجة السعودية/الخليجية).
-
-النص المراد ترجمته:
-"{text}"
-
-المصطلحات التقنية المهمة (استخدمها في الترجمة):
-{glossary_context if glossary_context else "لا توجد مصطلحات محددة"}
-
-التعليمات:
-1. استخدم العربية الفصحى الحديثة مع لهجة خليجية طبيعية
-2. احافظ على سياق التوثيقات التقنية
-3. استخدم المصطلحات من القاموس إن أمكن
-4. لا تترجم أسماء المكتبات والأدوات
-5. اجعل الترجمة سلسة وسهلة القراءة
-
-الترجمة:"""
+النص:
+{text}"""
 
     def _create_contextual_prompt(
         self,
@@ -162,116 +209,74 @@ class TranslatorAgent:
     ) -> str:
         """إنشاء prompt مع السياق"""
         domain_instructions = self._get_domain_instructions(domain)
+        sections = []
 
-        return f"""أنت مترجم احترافي متخصص في التوثيقات التقنية للمجال: {domain}
+        if context:
+            sections.append(f"السياق:\n{context}")
+        if glossary:
+            sections.append(f"المصطلحات المعتمدة:\n{glossary}")
+        if domain_instructions:
+            sections.append(domain_instructions)
 
-السياق:
-{context if context else "ترجمة توثيقات تقنية عامة"}
+        prefix = ("\n\n".join(sections) + "\n\n") if sections else ""
+        return f"""{prefix}ترجم النص التالي إلى العربية (المجال: {domain}):
 
-النص المراد ترجمته:
-"{text}"
-
-المصطلحات المتخصصة:
-{glossary if glossary else "استخدم المصطلحات المتعارف عليها في المجال"}
-
-{domain_instructions}
-
-الترجمة:"""
+النص:
+{text}"""
 
     def _get_domain_instructions(self, domain: str) -> str:
         """الحصول على تعليمات خاصة بالمجال"""
         domain_guides = {
-            "react": """
-تذكر:
+            "react": """تذكر:
 - Component = مكوّن
 - State = الحالة
 - Props = الخصائص
 - Hook = خُطّاف
-- Render = عرض/تصيير
-- Virtual DOM = DOM افتراضي
-""",
-            "fastapi": """
-تذكر:
+- Render = تصيير
+- Virtual DOM = DOM افتراضي""",
+            "fastapi": """تذكر:
 - Endpoint = نقطة نهاية
 - Route = مسار
 - Request = طلب
-- Response = رد
-- Dependency = اعتماد
-- Middleware = برمجيات وسيطة
-""",
-            "python": """
-تذكر:
+- Response = استجابة
+- Dependency = اعتمادية
+- Middleware = برمجيات وسيطة""",
+            "python": """تذكر:
 - Function = دالة
 - Class = فئة
 - Module = وحدة
 - Import = استيراد
 - Package = حزمة
-- Exception = استثناء
-""",
+- Exception = استثناء""",
         }
-
         return domain_guides.get(domain, "")
 
-    def _call_llm_api(self, prompt: str) -> str:
-        """
-        استدعاء واجهة LLM API
-        Call LLM API.
-
-        Args:
-            prompt: prompt الترجمة
-
-        Returns:
-            str: الترجمة من LLM
-        """
-        # في الإنتاج، يتم استدعاء OpenAI أو Anthropic API هنا
-        # For now, return a placeholder
-        # In production, call actual LLM API
-
-        # Example response (placeholder)
-        return "[ترجمة مترجمة - في الإنتاج ستحصل على رد من LLM]"
-
-    def batch_translate(self, texts: list) -> Dict[str, str]:
+    def batch_translate(self, texts: List[str]) -> Dict[str, str]:
         """
         ترجمة مجموعة من النصوص
         Translate multiple texts.
-
-        Args:
-            texts: قائمة النصوص
-
-        Returns:
-            dict: قاموس بالترجمات
         """
-        results = {}
-        for text in texts:
-            results[text] = self.translate_text(text)
-        return results
+        return {text: self.translate_text(text) for text in texts}
 
-    def get_translation_quality_hints(self, text: str) -> Dict[str, any]:
+    def get_translation_quality_hints(self, text: str) -> Dict[str, Any]:
         """
         الحصول على تلميحات جودة الترجمة
         Get translation quality hints.
-
-        Args:
-            text: النص المراد تحليله
-
-        Returns:
-            dict: تلميحات الجودة
         """
-        hints = {
+        hints: Dict[str, Any] = {
             'technical_terms': [],
             'special_characters': [],
             'code_snippets': [],
             'abbreviations': [],
         }
 
-        # Find technical terms
         for word in text.split():
-            translation = self.glossary_manager.get_translation(word.lower().strip('.,;:!?"\''))
+            translation = self.glossary_manager.get_translation(
+                word.lower().strip('.,;:!?"\'')
+            )
             if translation:
                 hints['technical_terms'].append((word, translation))
 
-        # Find special patterns
-        import re
         hints['abbreviations'] = re.findall(r'\b[A-Z]{2,}\b', text)
         hints['code_snippets'] = re.findall(r'`[^`]+`', text)
 
@@ -286,4 +291,6 @@ class TranslatorAgent:
         return {
             'total_translations': len(self.translation_history),
             'unique_translations': len(set(self.translation_history.values())),
+            'provider': self.llm.name,
+            'model': self.model,
         }
