@@ -20,9 +20,9 @@ It focuses on:
 
 ## Project Status
 
-This repository currently provides the pipeline structure, parser layer, glossary system, batch tooling, examples, tests, and a working CLI.
+This repository provides the full pipeline: parser layer, glossary system, live LLM provider integration (OpenAI and Anthropic), batch tooling, examples, tests, and a working CLI.
 
-The provider-facing LLM call is still an integration point inside [`arabic_translator/agents/translator_agent.py`](arabic_translator/agents/translator_agent.py), so production-grade live translation requires wiring your preferred provider there.
+If no API key is configured, the tool runs in **dry-run mode**: documents are parsed, protected, and reconstructed without translation, so you can safely test structure handling offline. Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` to enable live translation.
 
 ## Highlights
 
@@ -65,14 +65,15 @@ Example values:
 ```env
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
-LLM_PROVIDER=openai
-TRANSLATION_MODEL=gpt-4
-REVIEW_MODEL=gpt-4
-ADAPTER_MODEL=gpt-4
+LLM_PROVIDER=openai          # openai | anthropic | none (empty = auto-detect)
+TRANSLATION_MODEL=auto       # auto = provider's default model
+LLM_TEMPERATURE=0.3
 QUALITY_THRESHOLD=0.8
 ```
 
-The environment file is mainly useful once you connect a live provider implementation in the agent layer.
+Provider selection order: explicit `--provider` flag → `LLM_PROVIDER` env var → first available API key → offline dry-run with a warning.
+
+Default models can be overridden with `OPENAI_DEFAULT_MODEL` / `ANTHROPIC_DEFAULT_MODEL`, or per run with `--model`. Check your provider's documentation for current model names.
 
 ## Quick Start
 
@@ -84,10 +85,23 @@ Translate a single file:
 arabic-translate docs/readme.md --output docs/readme_ar.md --review
 ```
 
-Translate a folder:
+Translate a folder (4 parallel workers by default):
 
 ```bash
-arabic-translate docs --batch --pattern "*.md" --output translated_docs
+arabic-translate docs --batch --pattern "*.md" --output translated_docs --workers 4
+```
+
+Pick a provider and model explicitly:
+
+```bash
+arabic-translate docs/readme.md --provider anthropic --model claude-sonnet-4-6
+arabic-translate docs/readme.md --provider openai --model gpt-4o
+```
+
+Test structure handling offline (no API calls, no translation):
+
+```bash
+arabic-translate docs/readme.md --provider none
 ```
 
 You can also run the package as a module:
@@ -105,7 +119,8 @@ from arabic_translator import DocumentTranslator
 
 translator = DocumentTranslator(
     quality_threshold=0.8,
-    model="gpt-4",
+    provider="auto",   # openai | anthropic | none | auto
+    model="auto",      # provider's default model
 )
 
 result = translator.translate_file(
@@ -179,7 +194,8 @@ translator = DocumentTranslator(glossary_path="glossaries/custom.json")
 - `quality_score`
 - `quality_report`
 - `quality_passed`
-- `translation_time`
+- `translation_time` (seconds, measured)
+- `dry_run` (True when no API key was configured)
 
 `DocumentTranslator.translate_with_review(...)` adds:
 
@@ -241,11 +257,11 @@ Useful files:
 
 ### ملاحظة مهمة
 
-النسخة الحالية منظّمة بشكل جيد من ناحية البنية، الاختبارات، الواجهة البرمجية، وأدوات المعالجة. لكن ربط موفري الترجمة الفعليين ما زال يحتاج إكمال داخل طبقة الوكلاء إذا كنت تريد استخداماً إنتاجياً حقيقياً.
+تدعم الأداة الآن موفري OpenAI وAnthropic مباشرة. عند عدم وجود مفتاح API تعمل الأداة في وضع تجريبي آمن (dry-run) يعالج بنية المستند دون ترجمة النصوص، حتى لا يُتلف المحتوى بنص وهمي.
 
 ## Roadmap
 
-- Wire live OpenAI and Anthropic provider integrations
+- [x] Wire live OpenAI and Anthropic provider integrations
 - Expand glossary coverage for more frameworks and domains
 - Add documentation-platform integrations
 - Improve translation memory and consistency workflows

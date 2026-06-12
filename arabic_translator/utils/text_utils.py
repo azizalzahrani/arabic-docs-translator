@@ -7,7 +7,7 @@ Provides helper functions for text processing and content handling.
 """
 
 import re
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict
 
 
 class TextUtils:

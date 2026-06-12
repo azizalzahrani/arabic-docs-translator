@@ -9,7 +9,7 @@ from .pipeline import DocumentTranslator, BatchTranslator
 from .config import Config
 from .glossary import GlossaryManager
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __author__ = "Aziz Al-Zahrani"
 __license__ = "MIT"
 

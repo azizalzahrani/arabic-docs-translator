@@ -5,7 +5,6 @@ Glossary Manager Tests.
 
 import pytest
 import tempfile
-import json
 from pathlib import Path
 
 from arabic_translator.glossary import GlossaryManager
