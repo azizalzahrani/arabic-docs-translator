@@ -6,9 +6,9 @@ Technical Reviewer Agent.
 Reviews technical accuracy and terminology consistency.
 """
 
-from typing import Dict, List, Optional, Tuple
+import re
+from typing import Dict, List, Optional
 from ..glossary import GlossaryManager
-from ..utils import TextUtils
 
 
 class ReviewerAgent:
@@ -121,9 +121,9 @@ class ReviewerAgent:
         issues = []
         suggestions = []
 
-        # Check for code preservation
-        code_blocks_original = len(original.count('```'))
-        code_blocks_translated = len(translated.count('```'))
+        # Check for code preservation (a block has an opening and closing fence)
+        code_blocks_original = original.count('```') // 2
+        code_blocks_translated = translated.count('```') // 2
 
         if code_blocks_original != code_blocks_translated:
             issues.append(
@@ -167,8 +167,8 @@ class ReviewerAgent:
 
         text_lower = text.lower()
         for term in technical_terms:
-            if term in text_lower:
-                # Check if it's not in parentheses or code blocks
+            if re.search(r'\b' + re.escape(term) + r'\b', text_lower):
+                # Check if it's not inside inline code
                 if not self._is_in_code_block(text, term):
                     untranslated.append(term)
 
@@ -177,9 +177,8 @@ class ReviewerAgent:
     def _is_in_code_block(self, text: str, term: str) -> bool:
         """التحقق من كون المصطلح داخل كتلة كود"""
         # Simple check: if surrounded by backticks
-        pattern = f'`[^`]*{term}[^`]*`'
-        import re
-        return bool(re.search(pattern, text))
+        pattern = f'`[^`]*{re.escape(term)}[^`]*`'
+        return bool(re.search(pattern, text, re.IGNORECASE))
 
     def batch_review(
         self,

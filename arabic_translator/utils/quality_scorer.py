@@ -100,18 +100,23 @@ class QualityScorer:
         words = original.lower().split()
         glossary_matches = 0
         checked_terms = 0
+        seen = set()
 
         for word in words:
             # Remove punctuation
             clean_word = re.sub(r'[^\w]', '', word)
-            if len(clean_word) > 3:  # Only check words longer than 3 chars
-                checked_terms += 1
+            if len(clean_word) > 3 and clean_word not in seen:
+                seen.add(clean_word)
                 translation = self.glossary_manager.get_translation(clean_word)
-                if translation and translation in translated:
-                    glossary_matches += 1
+                if translation:
+                    # Only words the glossary actually knows count toward the score
+                    checked_terms += 1
+                    if translation in translated:
+                        glossary_matches += 1
 
         if checked_terms == 0:
-            return 0.5
+            # No glossary terms expected -> nothing violated
+            return 1.0
 
         return min(1.0, glossary_matches / checked_terms)
 
@@ -229,8 +234,8 @@ class QualityScorer:
             if max_freq / len(words) > 0.3:
                 issues += 1
 
-        # 2. Check for unfinished sentences
-        if not translated.strip().endswith(('.', '!', '?')):
+        # 2. Check for unfinished sentences (Arabic and Latin enders)
+        if not translated.strip().endswith(('.', '!', '?', '؟', '،', ':', '؛', '`')):
             issues += 1
 
         # 3. Check for proper spacing after punctuation

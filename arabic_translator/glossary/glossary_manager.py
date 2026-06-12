@@ -9,7 +9,6 @@ Manages loading, saving, and using technical glossaries.
 import json
 import os
 from typing import Dict, Optional, List
-from pathlib import Path
 
 
 class GlossaryManager:
@@ -149,8 +148,8 @@ class GlossaryManager:
         if glossary_name and glossary_name in self.glossaries:
             return self.glossaries[glossary_name].get(search_term)
 
-        # Search in all glossaries (framework first, then tech)
-        for name in ["framework", "custom", "tech"]:
+        # Search in all glossaries (user's custom terms first, then built-ins)
+        for name in ["custom", "framework", "tech"]:
             if name in self.glossaries:
                 result = self.glossaries[name].get(search_term)
                 if result:
