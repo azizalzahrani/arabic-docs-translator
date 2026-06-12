@@ -43,13 +43,20 @@ cd arabic-docs-translator
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-pip install -e .
+pip install -e .[all]        # with both provider SDKs (OpenAI + Anthropic)
 ```
 
-If you only want the raw dependencies without editable install:
+Or pick a single provider:
 
 ```bash
-pip install -r requirements.txt
+pip install -e .[openai]
+pip install -e .[anthropic]
+```
+
+For development (tests, linting):
+
+```bash
+pip install -r requirements-dev.txt
 ```
 
 ## Configuration
